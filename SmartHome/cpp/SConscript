@@ -1,0 +1,40 @@
+# Copyright (c) 2013 - 2014, AllSeen Alliance. All rights reserved.
+#
+#    Permission to use, copy, modify, and/or distribute this software for any
+#    purpose with or without fee is hereby granted, provided that the above
+#    copyright notice and this permission notice appear in all copies.
+#
+#    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+#    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+#    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+#    ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+#    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+#    ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+#    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+Import('SmartHome_env')
+
+if not SmartHome_env.has_key('_ALLJOYNCORE_'):
+    SmartHome_env.Append(LIBS = ['alljoyn'])
+    if SmartHome_env['BR'] == 'on' :
+        brFile = SmartHome_env.subst('$DISTDIR') + '/cpp/lib/BundledRouter.o'
+        SmartHome_env['brobj'] = File(brFile)
+        SmartHome_env['ajrlib'] = 'ajrouter'
+    if SmartHome_env['OS'] == 'openwrt':
+        SmartHome_env.AppendUnique(LIBS = [ 'stdc++', 'pthread' ])
+
+# Make SmartHome dist a sub-directory of the alljoyn dist.  This avoids any conflicts with alljoyn dist targets.
+SmartHome_env['SMARTHOME_DISTDIR'] = SmartHome_env['DISTDIR'] + '/SmartHome'
+
+SmartHome_env.Install('$SMARTHOME_DISTDIR/inc/alljoyn/SmartHome', SmartHome_env.Glob('inc/alljoyn/SmartHome/*.h'))
+
+# Libraries
+SmartHome_env.Install('$SMARTHOME_DISTDIR/lib', SmartHome_env.SConscript('src/SConscript', exports = ['SmartHome_env']))
+
+# Sample programs
+if SmartHome_env['BUILD_SERVICES_SAMPLES'] == 'on':
+    SmartHome_env.Install('$SMARTHOME_DISTDIR/bin', SmartHome_env.SConscript('samples/SConscript', exports = ['SmartHome_env_env']))
+
+# Build docs
+installDocs = SmartHome_env.SConscript('docs/SConscript', exports = ['SmartHome_env'])
+SmartHome_env.Depends(installDocs, SmartHome_env.Glob('$SMARTHOME_DISTDIR/inc/alljoyn/SmartHome/*.h'));

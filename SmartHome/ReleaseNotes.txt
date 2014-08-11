@@ -1,0 +1,43 @@
+
+
+AllJoyn Config Version 14.06 Release Notes
+------------------------------------------
+
+Platform Support
+----------------
+ 1) Linux Ubuntu (32 and 64 bit x86)
+ 2) Android Gingerbread 2.3.4 (ARM7)
+ 3) Android Ice Cream Sandwich 4.0 (ARM7)
+ 4) Android JellyBean 4.1 (ARM7)
+ 5) Android KitKat
+ 6) iOS 7
+ 7) OpenWRT (trunk)
+
+
+Features added in Version 14.06
+-------------------------------
+
+Issues Addressed in Version 14.06
+---------------------------------
+ASABASE-28 Device name should support multi languages 
+ASABASE-29 SetConfig should fail on fields that do not support language and request comes with a language 
+ASABASE-36 Changing the DefaultLanguage to unsupported language gives the wrong error message. 
+ASABASE-38 Device name is being reset to an empty string on server sample of java 
+ASABASE-50 SetConfig should fail on fields that do not support language and request comes with a language 
+ASABASE-119 iOS sample apps: remove 'realm name' and 'Are you Sure' UIAlert views 
+ASABASE-127 Remove the addMatch method call from the application layer of the sample applications 
+ASABASE-181 No need to set password for router now that it is open 
+
+
+Known Issues
+------------
+ASABASE-231 Config client crashes on gingerbread android version
+
+Compatibility
+-------------
+
+
+Change history
+--------------
+14.06 - Device name supports multi language on all platforms, bug fixes, updates needed to match new core 14.06
+14.02 - 1st AllSeen Alliance release
