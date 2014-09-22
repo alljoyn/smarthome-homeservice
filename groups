@@ -1,3 +1,4 @@
 # UUID                                  	Group Name
 #
+e974d19ba2ceeb3d34c448fc5789467aa83e815d	GitHub Replication for smarthome
 ldap:cn=smarthome,ou=groups,cn=allseen,dc=codeaurora,dc=org	ldap/smarthome
