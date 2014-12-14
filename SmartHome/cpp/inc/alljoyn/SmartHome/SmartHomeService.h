@@ -1,19 +1,3 @@
-/******************************************************************************
- *    Copyright (c) 2014, AllSeen Alliance. All rights reserved.
- *
- *    Permission to use, copy, modify, and/or distribute this software for any
- *    purpose with or without fee is hereby granted, provided that the above
- *    copyright notice and this permission notice appear in all copies.
- *
- *    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- *    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- *    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- *    ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- *    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- *    ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- *    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- ******************************************************************************/
-
 #ifndef _SMART_HOME_SERVICE_H
 #define _SMART_HOME_SERVICE_H
 
@@ -21,7 +5,7 @@
 #include <alljoyn/Session.h>
 
 #include "ThreadService.h"
-
+const char CCH[] = "_0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_";
 namespace ajn {
 namespace services {
 
@@ -56,7 +40,16 @@ public:
 	virtual void HandleTask(Task*task);    
 
 private:
-	
+	/**
+     * Handles the GetPropery request
+     * @param[in]  ifcName  interface name
+     * @param[in]  propName the name of the properly
+     * @param[in]  val reference of MsgArg out parameter.
+     * @return ER_OK if successful.
+     */
+    QStatus Get(const char* ifcName, const char* propName, MsgArg& val);
+
+	const char* GenerateRandomString(char *device_randomString);
 	/**
      * Handles ApplianceRegistration method
 	 * @param[in]  taskRegister  Container of a task of register
@@ -78,6 +71,12 @@ private:
 	QStatus HandleTaskExecute(const TaskExecute & taskExecute);
 
 	/**
+     * Handles Verification method
+	 * @param[in]  taskFindDevice  Container of a task of Verification
+     */
+	QStatus HandleTaskVerification(const TaskVerification & taskVerification);
+
+	/**
      * Handles ReturnValue signal
 	 * As long as there is a method call, there will be a ReturnValue signal 
 	 * @param[in]  reply  reference of AllJoyn Message from the callee
@@ -89,20 +88,19 @@ private:
 	QStatus ReturnValue(Message& reply, Device *senderDevice,const TaskExecute & taskExecute,QStatus status);
 
 	/**
+     * Handles ReturnValueVerification signal
+	 * As long as there is a Verification call, there will be a ReturnValueVerification signal 
+	 * @param[in]  device  the structure of the device named device ID
+	 * @return status.
+     */
+	QStatus ReturnValueVerification(Device *device);
+
+	/**
      * Handles DeviceHeartBeat method
 	 * one part of heart beat function, the other part is 
 	 * @param[in]  taskHeartBeat  Container of a task of heart beat
      */
 	void HandleTaskHeartBeat(const TaskHeartBeat & taskHeartBeat);
-
-	/**
-     * Fill the device information to the device container
-	 * The information contains interface name, objectPath, method name, method args, ProxyBusObject 
-	 * @param[in]  interfaceArgs  reference of MsgArg out parameter
-	 * @param[in]  device container of device
-	 * @return status.
-     */
-	QStatus FillDevice(const ajn::MsgArg interfaceArgs, Device* device);
 
 	/**
      *  Create interfaces
@@ -138,9 +136,17 @@ private:
 	void Execute(const InterfaceDescription::Member* member, Message& msg);
 
 	/**
+     *  Parse the args to the Verification task and push the task into the end of the task list
+	 *  @pama  member 
+	 *  @pama  msg reference of AllJoyn Message
+     */  
+	void Verification(const InterfaceDescription::Member* member, Message& msg);
+
+	/**
      *  Push a any task into the end of the task list
 	 *  @pama  task container of a any task
      */ 
+
 	void QueueTask(Task* task);
 
 	/**
@@ -151,11 +157,11 @@ private:
 	Task* GetFreeTask(TaskType taskType);
 
 	/**
-     *  Erase a device from the list of device by deviceID
-	 *  @pama  deviceID the identification of a device
+     *  Erase a device from the list of device by deviceId
+	 *  @pama  deviceId the identification of a device
 	 *  @return Device 
      */ 
-	Device* PopDevice(const char* deviceID);
+	Device* PopDevice(const char* deviceId);
 
 	/**
      *  Delete the device from the device list
@@ -171,27 +177,27 @@ private:
 	QStatus PushDevice(Device* device);
 
 	/**
-     *  Find a device from the list of device by deviceID
-	 *  @pama  deviceID the identification of a device
+     *  Find a device from the list of device by deviceId
+	 *  @pama  deviceId the identification of a device
 	 *  @return Device 
      */ 
-	Device* FindDevice(const char* deviceID);
+	Device* FindDevice(const char* deviceId);
 
 	/**
-     *  Find a ProxyObject from the list of ProxyObject by deviceID and objectPath
-	 *  @pama  deviceID  the identification of a device
+     *  Find a ProxyObject from the list of ProxyObject by deviceId and objectPath
+	 *  @pama  deviceId  the identification of a device
 	 *  @pama  objectPath  the path of a bus object
 	 *  @return ProxyBusObject 
      */ 
-	ajn::ProxyBusObject* FindProxyObject(const char* deviceID, const char* objectPath);
+	ajn::ProxyBusObject* FindProxyObject(const char* deviceId, const char* objectPath);
 
 	/**
-     *  Find a InterFaceName from the list of InterFaceName by deviceID and objectPath
-	 *  @pama  deviceID  the identification of a device
+     *  Find a InterFaceName from the list of InterFaceName by deviceId and objectPath
+	 *  @pama  deviceId  the identification of a device
 	 *  @pama  objectPath  the path of a bus object
 	 *  @return InterFaceName 
      */ 
-	const char* FindInterFaceName(const char* deviceID, const char* objectPath);
+	const char* FindInterFaceName(const char* deviceId, const char* objectPath);
 
 	/**
      *  The Heart Beat Manager
@@ -216,6 +222,7 @@ private:
      *  stores the signal member initialized  in the CreateInterfaces(..)
      */
     const ajn::InterfaceDescription::Member * m_ReturnValueSignalMember;
+	const ajn::InterfaceDescription::Member * m_ReturnValueVerificationSignalMember;
 };
 
 } // namespace

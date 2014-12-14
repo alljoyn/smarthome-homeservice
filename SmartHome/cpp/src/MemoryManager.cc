@@ -1,19 +1,3 @@
-/******************************************************************************
- *    Copyright (c) 2014, AllSeen Alliance. All rights reserved.
- *
- *    Permission to use, copy, modify, and/or distribute this software for any
- *    purpose with or without fee is hereby granted, provided that the above
- *    copyright notice and this permission notice appear in all copies.
- *
- *    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- *    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- *    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- *    ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- *    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- *    ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- *    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- ******************************************************************************/
-
 #include "MemoryManager.h"
 
 namespace ajn{
@@ -71,15 +55,15 @@ void MemoryManager::PushTask(Task* task)
 	m_mutexTaskList.Unlock();
 }
 
-Device* MemoryManager::PopDevice(const char* deviceID)
+Device* MemoryManager::PopDevice(const char* deviceId)
 {
-	if (!deviceID){
+	if (!deviceId){
 		return NULL;
 	}
 
 	Device* device = NULL;
 
-	MapDevice::iterator iter = m_deviceList.find(deviceID);
+	MapDevice::iterator iter = m_deviceList.find(deviceId);
 	if (iter != m_deviceList.end()){
 		device = iter->second;
 		m_deviceList.erase(iter);
@@ -99,17 +83,20 @@ void MemoryManager::ReleaseDevice(Device* device)
 		MapProxyObject::iterator iter4 = device->proxyObjectList.begin();
 		while (iter4 != device->proxyObjectList.end()){
 			delete iter4->second;
-			++iter4;
+			iter4->second = NULL;
+			device->proxyObjectList.erase(iter4++);
 		}
 		device->proxyObjectList.clear();
 
-		MapInerfaceName::iterator iter5 = device->interFaceNameList.begin();
+		/*MapInerfaceName::iterator iter5 = device->interFaceNameList.begin();
 		while (iter5 != device->interFaceNameList.end()){
+			printf("object path is %s,%s\n",iter5->first,iter5->second);
 			delete iter5->first;
 			delete iter5->second;
-			++iter5;
+			iter5->second = NULL;
+			device->interFaceNameList.erase(iter5++);
 		}
-		device->interFaceNameList.clear();
+		device->interFaceNameList.clear();*/
 	}
 	delete device;
 }
@@ -122,21 +109,21 @@ QStatus MemoryManager::PushDevice(Device* device)
 
 	QStatus status = ER_OK;
 
-	MapDevice::iterator iter = m_deviceList.find(device->deviceID);
+	MapDevice::iterator iter = m_deviceList.find(device->deviceId);
 	if (iter == m_deviceList.end()){
-		m_deviceList.insert(std::pair<const char*, Device*>(device->deviceID, device));
+		m_deviceList.insert(std::pair<const char*, Device*>(device->deviceId, device));
 	}
 
 	return status;
 }
 
-Device* MemoryManager::FindDevice(const char* deviceID)
+Device* MemoryManager::FindDevice(const char* deviceId)
 {
-	if (!deviceID){
+	if (!deviceId){
 		return NULL;
 	}
 
-	MapDevice::iterator iter = m_deviceList.find(deviceID);
+	MapDevice::iterator iter = m_deviceList.find(deviceId);
 	if (iter != m_deviceList.end()){
 		return iter->second;
 	}
@@ -144,13 +131,13 @@ Device* MemoryManager::FindDevice(const char* deviceID)
 	return NULL;
 }
 
-ajn::ProxyBusObject* MemoryManager::FindProxyObject(const char* deviceID, const char* objectPath)
+ajn::ProxyBusObject* MemoryManager::FindProxyObject(const char* deviceId, const char* objectPath)
 {
-	if (!deviceID || !objectPath){
+	if (!deviceId || !objectPath){
 		return NULL;
 	}
 
-	MapDevice::iterator iter = m_deviceList.find(deviceID);
+	MapDevice::iterator iter = m_deviceList.find(deviceId);
 	if (iter != m_deviceList.end()){
 		MapProxyObject::iterator iter2 = iter->second->proxyObjectList.find(objectPath);
 		if (iter2 != iter->second->proxyObjectList.end()){
@@ -161,13 +148,13 @@ ajn::ProxyBusObject* MemoryManager::FindProxyObject(const char* deviceID, const 
 	return NULL;
 }
 
-const char* MemoryManager::FindInterfanceName(const char* deviceID, const char* objectPath)
+const char* MemoryManager::FindInterfanceName(const char* deviceId, const char* objectPath)
 {
-	if (!deviceID || !objectPath){
+	if (!deviceId || !objectPath){
 		return NULL;
 	}
 
-	MapDevice::iterator iter = m_deviceList.find(deviceID);
+	MapDevice::iterator iter = m_deviceList.find(deviceId);
 	if (iter != m_deviceList.end()){
 		MapInerfaceName::iterator iter2 = iter->second->interFaceNameList.find(objectPath);
 		if (iter2 != iter->second->interFaceNameList.end()){
@@ -182,34 +169,49 @@ void MemoryManager::HeartBeatManager()
 {
 	Device *device;
 	MapDevice::iterator iter = m_deviceList.begin();
-	char* missedDeviceID[MAX_ARRAY_LEN] = {NULL};
-	int missedDeviceIDLen = 0;
+	char* misseddeviceId[MAX_ARRAY_LEN] = {NULL};
+	int misseddeviceIdLen = 0;
 	
 	while (iter != m_deviceList.end()){
-		const char * deviceID = iter->first;
+		const char * deviceId = iter->first;
 		device = iter->second;
 		if (device){
-			if((*device).heartCount==0){
-				missedDeviceID[missedDeviceIDLen++] = const_cast<char*>(deviceID);
-				printf("The device named %s is missing.\n",missedDeviceID[missedDeviceIDLen-1]);
-				
+			if(device->heartCount==0){
+				if(device->stringTime==0)
+				{
+				device->deviceLock = -1;
+				misseddeviceId[misseddeviceIdLen++] = const_cast<char*>(deviceId);
+				printf("The device named %s is missing.\n",misseddeviceId[misseddeviceIdLen-1]);
+				}
+				else
+				{
+					device->deviceLock = 0;
+					device->stringTime--;
+				}
 			}else {
-				(*device).heartCount--;
+				if(device->stringTime == 0)
+					device->deviceLock = 1;
+				else
+				{
+					device->deviceLock = 2;
+					device->stringTime--;			
+				}
+				device->heartCount--;
 			}
 		}
 		++iter;
 	}
 
-	Device* missedDevice = NULL;
-	for (int i=0; i<missedDeviceIDLen; ++i)
+	/*Device* missedDevice = NULL;
+	for (int i=0; i<misseddeviceIdLen; ++i)
 	{
-		missedDevice = PopDevice(missedDeviceID[i]);
+		missedDevice = PopDevice(misseddeviceId[i]);
 		if(missedDevice)
 		{
 			ReleaseDevice(missedDevice);
 			missedDevice = NULL;
 		}
-	}		
+	}		*/
 }
 
 Task* MemoryManager::PopFreeTask(TaskType taskType)
@@ -236,6 +238,8 @@ Task* MemoryManager::PopFreeTask(TaskType taskType)
 			task->task = static_cast<void*>(new TaskHeartBeat());
 		}else if (taskType == TASK_TYPE_OF_EXECUTE){
 			task->task = static_cast<void*>(new TaskExecute());
+		}else if (taskType == TASK_TYPE_OF_VERIFICATION){
+			task->task = static_cast<void*>(new TaskVerification());
 		}
 	}
 

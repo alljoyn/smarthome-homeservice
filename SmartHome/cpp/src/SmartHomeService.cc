@@ -1,18 +1,3 @@
-/******************************************************************************
- *    Copyright (c) 2014, AllSeen Alliance. All rights reserved.
- *
- *    Permission to use, copy, modify, and/or distribute this software for any
- *    purpose with or without fee is hereby granted, provided that the above
- *    copyright notice and this permission notice appear in all copies.
- *
- *    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- *    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- *    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- *    ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- *    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- *    ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- *    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- ******************************************************************************/
 #include "SmartHomeService.h"
 
 #include <qcc/Debug.h>
@@ -20,8 +5,11 @@
 #include "MemoryManager.h"
 #include "BusListenerImpl.h"
 #include "SmartHomeServiceMain.h"
-
+#include "xmldecoder.h"
+#include <CTIME>
 #define QCC_MODULE "SMART_HOME_SERVICE"
+#define VERSION 1
+#define SERVICEINTERFACEVERSION 1
 
 namespace ajn{
 namespace services{
@@ -56,9 +44,10 @@ void SmartHomeService::HandleTask(Task* task)
 		{
 		case TASK_TYPE_OF_REGISTER:
 			{
+	
 				TaskRegister* taskRegister = static_cast<TaskRegister*>(task->task);
 				QStatus status = HandleTaskRegister(*taskRegister);
-
+	
 				break;
 			}
 		case TASK_TYPE_OF_UNREGISTER:
@@ -82,6 +71,13 @@ void SmartHomeService::HandleTask(Task* task)
 
 				break;
 			}
+		case TASK_TYPE_OF_VERIFICATION:
+		{
+			TaskVerification* taskVerification = static_cast<TaskVerification*>(task->task);
+			HandleTaskVerification(*taskVerification);
+
+			break;
+		}
 		default :
 			{
 			}
@@ -92,30 +88,32 @@ void SmartHomeService::HandleTask(Task* task)
 QStatus SmartHomeService::HandleTaskRegister(const TaskRegister & taskRegister)
 {
 	QStatus status = ER_OK;
-
-	Device* device = PopDevice(taskRegister.deviceID);
+	Device* device = PopDevice(taskRegister.deviceId);
 	if (!device){
 		device = new Device();
 		memcpy(device->wellKnownName, taskRegister.wellKnownName, sizeof(taskRegister.wellKnownName));
 		memcpy(device->uniqueName, taskRegister.uniqueName, sizeof(taskRegister.uniqueName));
-		memcpy(device->deviceID, taskRegister.deviceID, sizeof(taskRegister.deviceID));
+		memcpy(device->deviceId, taskRegister.deviceId, sizeof(taskRegister.deviceId));
 	}
-
-	const char* wellKnownName = taskRegister.wellKnownName;
-	ajn::ProxyBusObject* remoteObj = NULL;
-	
-	for (int i=0; i<taskRegister.methodArgsNum; ++i){
-		status = FillDevice(taskRegister.methodArgs[i], device);
-		if (status != ER_OK){
-			break;
-		}
+	 
+	String Source(taskRegister.methodArgs->v_string.str);
+	size_t objpath_num = ReturnHowManyObjectPath(Source);
+	String* obj_path = new String[objpath_num];
+	for(size_t i=1;i<=objpath_num;i++)
+	{
+		obj_path[i-1] = ReturnObjectPath(Source,i);
+		ProxyBusObject *remoteObj = new ajn::ProxyBusObject(*m_BusAttachment, taskRegister.uniqueName, obj_path[i-1].c_str(), ID);
+		status = remoteObj->IntrospectRemoteObject();
+		//if(status != ER_OK)
+		//	return status;
+		device->proxyObjectList.insert(std::pair<const char*, ajn::ProxyBusObject*>(obj_path[i-1].c_str(), remoteObj));
 	}
-
+	status = ER_OK;
 	if (status == ER_OK){
 		PushDevice(device);		
 	}else{
 		QCC_LogError(status, ("HandleTaskRegister Error:%s, %d, %d\n"
-							, device->deviceID, device->proxyObjectList.size()
+							, device->deviceId, device->proxyObjectList.size()
 							,device->interFaceNameList.size()));
 	}
 	
@@ -125,46 +123,82 @@ QStatus SmartHomeService::HandleTaskRegister(const TaskRegister & taskRegister)
 void SmartHomeService::HandleTaskUnRegister(const TaskUnRegister & taskUnRegister)
 {
 
-	Device* device = PopDevice(taskUnRegister.deviceID);
+	Device* device = PopDevice(taskUnRegister.deviceId);
 	if (!device){
-		printf("There is no device named %s", taskUnRegister.deviceID);
+		printf("There is no device named %s", taskUnRegister.deviceId);
 	}
-
-	if (device){
-		MapProxyObject::iterator proxyObjectList = device->proxyObjectList.begin();
-		while (proxyObjectList != device->proxyObjectList.end()){
-			delete proxyObjectList->second;
-			++proxyObjectList;
-		}
-		device->proxyObjectList.clear();
-
-		MapInerfaceName::iterator interFaceNameList = device->interFaceNameList.begin();
-		while (interFaceNameList != device->interFaceNameList.end()){
-			delete interFaceNameList->first;
-			delete interFaceNameList->second;
-			++interFaceNameList;
-		}
-		device->interFaceNameList.clear();
-	}
-    delete device;	
-	Device* findDevice = FindDevice(taskUnRegister.deviceID);
+	
+	ReleaseDevice(device);
+	Device* findDevice = FindDevice(taskUnRegister.deviceId);
 	if (findDevice){
-	printf("Unregister the device %s failed! %d\n", taskUnRegister.deviceID);
+	printf("Unregister the device %s failed! %d\n", taskUnRegister.deviceId);
 	}else{
-	printf("Unregister the device %s successful! %d\n", taskUnRegister.deviceID);
+	printf("Unregister the device %s successful! %d\n", taskUnRegister.deviceId);
 	}
 }
 
 void SmartHomeService::HandleTaskHeartBeat(const TaskHeartBeat & taskHeartBeat)
 {
-	const char* deviceID = taskHeartBeat.deviceID;
-	Device * device = FindDevice(taskHeartBeat.deviceID);
+	const char* deviceId = taskHeartBeat.deviceId;
+	const char* randomString = taskHeartBeat.randomString;
+	Device * device = FindDevice(taskHeartBeat.deviceId);
 	if (!device){
-		printf("There is no device named %s ! \n", taskHeartBeat.deviceID);
-	
-	}else {
+		ajn::MsgArg Args;
+		Args.Set("s","NO DEVICE!");
+		MsgArg GWReplyArgs[3];
+		GWReplyArgs[0].Set("s","HeartBeat");
+		GWReplyArgs[1].Set("s",QCC_StatusText(ER_NO_SUCH_DEVICE));
+		GWReplyArgs[2].Set("v",Args);
+		QStatus status = Signal(NULL, ID, *m_ReturnValueSignalMember,GWReplyArgs,3, 0);
+		printf("There is no device named %s ! \n", taskHeartBeat.deviceId);
+	}
+	else if(!strcmp(randomString,device->randomString) && device->deviceLock != -1)
+	{
 	    device->heartCount = 3;
-	    printf("Receive heart beat from %s ! \n", taskHeartBeat.deviceID);
+		device->stringTime = 60;
+		printf("Receive heart beat from %s and refresh arguments! \n", taskHeartBeat.deviceId);
+		ajn::MsgArg Args;
+		Args.Set("s","RandomString MATCHED and VALID!");
+		MsgArg GWReplyArgs[3];
+		GWReplyArgs[0].Set("s","HeartBeat");
+		GWReplyArgs[1].Set("s",QCC_StatusText(ER_OK));
+		GWReplyArgs[2].Set("v",Args);
+		QStatus status = Signal(NULL, ID, *m_ReturnValueSignalMember,GWReplyArgs,3, 0);
+		printf("Heartbeat:Signal ID %d, method is %s, status is %s, Args are %s.\n", ID, "HeartBeat", QCC_StatusText(ER_TIMEOUT),Args.v_string.str);
+	}
+	else if(device->deviceLock == -1)//the device has locked and need 
+	{
+		ajn::MsgArg Args;
+		Args.Set("s","Locked = -1");
+		MsgArg GWReplyArgs[3];
+		GWReplyArgs[0].Set("s","HeartBeat");
+		GWReplyArgs[1].Set("s",QCC_StatusText(ER_TIMEOUT));
+		GWReplyArgs[2].Set("v",Args);
+		QStatus status = Signal(NULL, ID, *m_ReturnValueSignalMember,GWReplyArgs,3, 0);
+		printf("Heartbeat:Signal ID %d, method is %s, status is %s, Args are %s.\n", ID, "HeartBeat", QCC_StatusText(ER_TIMEOUT),Args.v_string.str);
+	}
+	else if(strcmp(randomString,device->randomString)&&strcmp(randomString,"NULL"))//string not match
+	{
+		ajn::MsgArg Args;
+		Args.Set("s","RandomString unmatched");
+		MsgArg GWReplyArgs[3];
+		GWReplyArgs[0].Set("s","HeartBeat");
+		GWReplyArgs[1].Set("s",QCC_StatusText(ER_BUS_MATCH_RULE_NOT_FOUND));
+		GWReplyArgs[2].Set("v",Args);
+		QStatus status = Signal(NULL, ID, *m_ReturnValueSignalMember,GWReplyArgs,3, 0);
+		printf("Heartbeat:Signal ID %d, method is %s, status is %s, Args are %s.\n", ID, "HeartBeat", QCC_StatusText(ER_TIMEOUT),Args.v_string.str);
+	}else if(!strcmp(randomString,"NULL")){    //first heartbeat,string is NULL so gateway give a random string to the client
+	    ajn::MsgArg Args;
+		const char * newString;
+		newString = GenerateRandomString(device->randomString);
+		Args.Set("s",newString);
+		MsgArg GWReplyArgs[3];
+		GWReplyArgs[0].Set("s","HeartBeat");
+		GWReplyArgs[1].Set("s",QCC_StatusText(ER_BAD_ARG_3));
+		GWReplyArgs[2].Set("v",Args);
+		QStatus status = Signal(NULL, ID, *m_ReturnValueSignalMember,GWReplyArgs,3, 0);
+		printf("Heartbeat:Signal ID %d, method is %s, status is %s, Args are %s.\n", ID, "HeartBeat", QCC_StatusText(ER_TIMEOUT),Args.v_string.str);
+	
 	}
 }
 
@@ -172,15 +206,17 @@ QStatus SmartHomeService::HandleTaskExecute(const TaskExecute & taskExecute)
 {
 	Message reply(*m_BusAttachment);
 	QStatus status = ER_OK;
-	const char* interfaceName = FindInterFaceName(taskExecute.deviceID, taskExecute.objectPath);
-	ajn::ProxyBusObject* remoteObj = FindProxyObject(taskExecute.deviceID, taskExecute.objectPath);
-	Device *senderDevice = FindDevice(taskExecute.deviceID);
+	ajn::ProxyBusObject* remoteObj = FindProxyObject(taskExecute.deviceId, taskExecute.objectPath);
+	Device *senderDevice = FindDevice(taskExecute.deviceId);
 
     if (remoteObj){
-		status = remoteObj->MethodCall(interfaceName, taskExecute.methodName, taskExecute.methodArgs, 1, reply, 5000);
-		status = ReturnValue(reply,senderDevice,taskExecute,status);
+		status = remoteObj->MethodCall(taskExecute.interfaceName, taskExecute.methodName, taskExecute.methodArgs, 1, reply, 5000);
+		ajn::AllJoynMessageType i = reply->GetType();
+		printf("HandleTaskExecute->[%s][%s]\n", taskExecute.methodName, reply->GetArg(0)->v_string.str);
+		status = SmartHomeServiceApi::getInstance()->ReturnValue(reply,senderDevice,taskExecute,status);
+		printf("ReturnValue Signal send %s\n", QCC_StatusText(status));
 	}else{
-		QCC_LogError(status, ("%s, %s, %s\n", taskExecute.deviceID, taskExecute.objectPath, interfaceName));
+		QCC_LogError(status, ("%s, %s, %s\n", taskExecute.deviceId, taskExecute.objectPath, taskExecute.interfaceName));
     }
 
 	return status;
@@ -195,81 +231,51 @@ QStatus SmartHomeService::ReturnValue(Message& reply, Device *senderDevice,const
 	const char* methodName = taskExecute.methodName;
 	
 	reply->GetArgs(argsNum, Args);
-	Args[0].Get("v",&ReplyArgs);
 	GWReplyArgs[0].Set("s",methodName);
 	GWReplyArgs[1].Set("s",QCC_StatusText(status));
-	GWReplyArgs[2].Set("v",ReplyArgs);
-
-    status = Signal(senderDevice->uniqueName, ID, *m_ReturnValueSignalMember,GWReplyArgs,3, 0);
-	 
-	return status;	
+	GWReplyArgs[2].Set("v",Args);
+    QStatus status_signal = Signal(NULL, ID, *m_ReturnValueSignalMember,GWReplyArgs,3, 0);
+	printf("Signal ID %d, method is %s, status is %s, Args are %s.\n", ID, methodName, QCC_StatusText(status),Args->v_variant.val->v_string.str);
+	
+	return status_signal;
 }
 
-QStatus SmartHomeService::FillDevice(const ajn::MsgArg interfaceArgs, Device* device)
+QStatus SmartHomeService::HandleTaskVerification(const TaskVerification & taskVerification)
 {
-	QStatus status = ER_FAIL;
+	QStatus status = ER_OK;
+	const char* deviceId = taskVerification.deviceId;
+	Device* device = FindDevice(taskVerification.deviceId);
 	if (!device){
+		Device *nullDevice = new Device();
+		char* wellKnownName = "NULL";
+		char* uniqueName = "NULL";
+		memcpy(nullDevice->deviceId, deviceId, strlen(deviceId));
+		memcpy(nullDevice->wellKnownName, wellKnownName, strlen(wellKnownName));
+		memcpy(nullDevice->uniqueName, uniqueName, strlen(uniqueName));
+
+		printf("HandleTaskVerification-> No device verified %s\n", taskVerification.deviceId);
+		status = ReturnValueVerification(nullDevice);
+		return ER_FAIL;
+	}else{
+		printf("HandleTaskVerification->deviceId: %s\n", taskVerification.deviceId);
+		status = ReturnValueVerification(device);
 		return status;
 	}
+}
+
+QStatus SmartHomeService::ReturnValueVerification(Device *device)
+{
+	QStatus status = ER_OK;
+	size_t argsNum = 0;
+	const ajn::MsgArg * Args = NULL;
+	MsgArg ReplyArgs;
+	ReplyArgs.Set("(sss)",device->deviceId,device->wellKnownName,device->uniqueName);
+
+	status = Signal(NULL, ID, *m_ReturnValueVerificationSignalMember,&ReplyArgs, 1, 0);
 	
-	const char* wellKnownName = device->wellKnownName;
-	ajn::ProxyBusObject* remoteObj = NULL;	
-
-	const char* interfaceName = NULL;
-	const char* objectPath = NULL;
-	const ajn::MsgArg* args = NULL;
-	status = interfaceArgs.Get("(sov)", &interfaceName, &objectPath, &args);
-	if (status != ER_OK){
-		return status;
-	}
-
-	int objPathLen = strlen(objectPath);
-	int ifaceNameLen = strlen(interfaceName);
-	char* objPath = new char[objPathLen+1];
-	char* ifaceName = new char[ifaceNameLen+1];
-	memcpy(objPath, objectPath, objPathLen);
-	memcpy(ifaceName, interfaceName, ifaceNameLen);
-	objPath[objPathLen] = '\0';
-	ifaceName[ifaceNameLen] = '\0';
-
-	device->interFaceNameList.insert(std::pair<const char*, const char*>(objPath, ifaceName));
-
-	int medthodNum = 0;
-	const ajn::MsgArg* methods = NULL;
-	status = args->Get("a(ssss)", &medthodNum, &methods);
-	if (status != ER_OK){
-		return status;
-	}
-
-	InterfaceDescription* interfaceDescription = const_cast<InterfaceDescription*>(m_BusAttachment->GetInterface(interfaceName));
-	if (!interfaceDescription) {
-		status = m_BusAttachment->CreateInterface(interfaceName, interfaceDescription);
-
-		if (status == ER_OK) {
-			const char* methodName = NULL;
-			const char* inputSig = NULL;
-			const char* outoutSig = NULL;
-			const char* argNames = NULL;
-			
-			for (int i=0; i<medthodNum; ++i){
-				status = methods[i].Get("(ssss)", &methodName, &inputSig, &outoutSig, &argNames);
-				if (status == ER_OK) {
-					status = interfaceDescription->AddMethod(methodName, inputSig, outoutSig, argNames);
-					if (status != ER_OK){
-						break;
-					}
-				}
-			}
-
-			if (status == ER_OK){
-				interfaceDescription->Activate();
-				remoteObj = new ajn::ProxyBusObject(*m_BusAttachment, wellKnownName, objectPath, 0);
-				remoteObj->AddInterface(*interfaceDescription);
-				device->proxyObjectList.insert(std::pair<const char*, ajn::ProxyBusObject*>(objPath, remoteObj));
-			}
-		}
-	}
-
+	printf("UniqueName : %s.\n", device->uniqueName);
+	printf("WellName : %s.\n", device->wellKnownName);
+	printf("Return : %s.\n",QCC_StatusText(status));
 	return status;
 }
 
@@ -289,11 +295,9 @@ QStatus SmartHomeService::CreateInterfaces()
 			return ER_BUS_CANNOT_ADD_INTERFACE;
 		}
 
-		// Signature:sssa(sov), (sov):[s:InterfaceName, o:BusObjectPath, v:a(ssss), 
-		// (ssss):[s:MethodName, s:InputSig, s:OutputSig, s:ArgNames]]
 		status = interfaceDescription->AddMethod("ApplianceRegistration"
-													, "sssa(sov)", NULL
-													, "wellKnownName,uniqueName,deviceId,objectDescription");
+													, "ss", "u"
+													, "RandomString,XML,returnRandomString");
 
 		if (status != ER_OK) {
 			return status;
@@ -306,23 +310,45 @@ QStatus SmartHomeService::CreateInterfaces()
 			return status;
 		}
 		status = interfaceDescription->AddMethod("DeviceHeartBeat"
-													, "s", NULL
-													, "DeviceID");
+													, "ss", NULL
+													, "deviceId,validateCode");
 
 		if (status != ER_OK) {
 			return status;
 		}
 
-		status = interfaceDescription->AddMethod("Execute", "bsosv", NULL
-													, "isReturn,deviceId,objectPath,methodName,arguments");
+		status = interfaceDescription->AddMethod("Execute", "bsossv", NULL
+													, "isReturn,deviceId,objectPath,interfaceName,methodName,arguments");
 		if (status != ER_OK) {
 			return status;
 		}
-		status = interfaceDescription->AddSignal("ReturnValue", "ssv", "methodName,ReturnStatus,arguments");
+		status = interfaceDescription->AddMethod("Verification", "s", NULL
+											, "deviceId");
 		if (status != ER_OK) {
 			return status;
 		}
-		status = interfaceDescription->AddProperty("Version", "q", (uint8_t) PROP_ACCESS_READ);
+		status = interfaceDescription->AddSignal("ReturnValue", "ssv", "methodName,ReturnStatus,value");
+		if (status != ER_OK) {
+			return status;
+		}
+		status = interfaceDescription->AddSignal("ReturnValueVerification", "(sss)", "VerificationResult");
+
+		if (status != ER_OK) {
+			return status;
+		}
+		status = interfaceDescription->AddProperty("Version", "u", (uint8_t) PROP_ACCESS_READ);
+		if (status != ER_OK) {
+			return status;
+		}
+		status = interfaceDescription->SetPropertyDescription("Version", "1.0.0");
+		if (status != ER_OK) {
+			return status;
+		}
+		status = interfaceDescription->AddProperty("ServiceInterfaceVercion", "q", (uint8_t) PROP_ACCESS_READ);
+		if (status != ER_OK) {
+			return status;
+		}
+		status = interfaceDescription->SetPropertyDescription("ServiceInterfaceVercion", "1.0.0");
 		if (status != ER_OK) {
 			return status;
 		}
@@ -352,10 +378,15 @@ QStatus SmartHomeService::CreateInterfaces()
 		if (status != ER_OK) {
 			return status;
 		}
-		
-		//Register signal handler 
+		status = AddMethodHandler(interfaceDescription->GetMember("Verification"),
+			static_cast<MessageReceiver::MethodHandler>(&SmartHomeService::Verification));
+		if (status != ER_OK) {
+			return status;
+		}
 	    m_ReturnValueSignalMember = interfaceDescription->GetMember("ReturnValue");
 		assert(m_ReturnValueSignalMember);
+		m_ReturnValueVerificationSignalMember = interfaceDescription->GetMember("ReturnValueVerification");
+		assert(m_ReturnValueVerificationSignalMember);
 	}
 	return status;
 }
@@ -363,13 +394,17 @@ QStatus SmartHomeService::CreateInterfaces()
 void SmartHomeService::ApplianceRegistration(const ajn::InterfaceDescription::Member* member, ajn::Message& msg)
 {
 	QCC_DbgTrace(("SmartHomeService::%s", __FUNCTION__));
-
 	size_t argsNum = 0;
 	const ajn::MsgArg* args = NULL;
 	msg->GetArgs(argsNum, args);
 
 	Task* task = ArgsParse(args, argsNum, TASK_TYPE_OF_REGISTER);
+	TaskRegister* taskRegister = static_cast<TaskRegister*>(task->task);
 	QueueTask(task);
+	MsgArg outArg;
+	outArg.Set("u", ER_OK);
+	printf("Queued Task!\n");
+	QStatus status = MethodReply(msg,&outArg,1);
 }
 
 void SmartHomeService::ApplianceUnRegistration(const ajn::InterfaceDescription::Member* member, ajn::Message& msg)
@@ -382,6 +417,8 @@ void SmartHomeService::ApplianceUnRegistration(const ajn::InterfaceDescription::
 
 	Task* task = ArgsParse(args, argsNum, TASK_TYPE_OF_UNREGISTER);
 	QueueTask(task);
+	MsgArg outArg("u", ER_OK);
+	QStatus status = MethodReply(msg);
 }
 
 void SmartHomeService::DeviceHeartBeat(const ajn::InterfaceDescription::Member* member, ajn::Message& msg)
@@ -394,6 +431,8 @@ void SmartHomeService::DeviceHeartBeat(const ajn::InterfaceDescription::Member* 
 
 	Task* task = ArgsParse(args, argsNum, TASK_TYPE_OF_HEARTBEAT);
 	QueueTask(task);
+	MsgArg outArg("u", ER_OK);
+	QStatus status = MethodReply(msg);
 }
 
 void SmartHomeService::Execute(const InterfaceDescription::Member* member, Message& msg)
@@ -408,6 +447,22 @@ void SmartHomeService::Execute(const InterfaceDescription::Member* member, Messa
 	task = ArgsParse(args, argsNum, TASK_TYPE_OF_EXECUTE);
 	
 	QueueTask(task);
+	MethodReply(msg);
+}
+
+void SmartHomeService::Verification(const InterfaceDescription::Member* member, Message& msg)
+{
+	QCC_DbgTrace(("SmartHomeService::%s", __FUNCTION__));
+
+	size_t argsNum = 0;
+	const ajn::MsgArg* args = NULL;
+	msg->GetArgs(argsNum, args);
+	
+	Task* task ;
+	task = ArgsParse(args, argsNum, TASK_TYPE_OF_VERIFICATION);
+	
+	QueueTask(task);
+	MethodReply(msg);
 }
 
 void SmartHomeService::QueueTask(Task* task)
@@ -420,9 +475,9 @@ Task* SmartHomeService::GetFreeTask(TaskType taskType)
 	return ThreadService::Instance().PopFreeTask(taskType);
 }
 
-Device* SmartHomeService::PopDevice(const char* deviceID)
+Device* SmartHomeService::PopDevice(const char* deviceId)
 {
-	return ThreadService::Instance().PopDevice(deviceID);
+	return ThreadService::Instance().PopDevice(deviceId);
 }
 
 void SmartHomeService::ReleaseDevice(Device* device)
@@ -434,19 +489,19 @@ QStatus SmartHomeService::PushDevice(Device* device)
 	return ThreadService::Instance().PushDevice(device);
 }
 
-Device* SmartHomeService::FindDevice(const char* deviceID)
+Device* SmartHomeService::FindDevice(const char* deviceId)
 {
-	return ThreadService::Instance().FindDevice(deviceID);
+	return ThreadService::Instance().FindDevice(deviceId);
 }
 
-ajn::ProxyBusObject* SmartHomeService::FindProxyObject(const char* deviceID, const char* objectPath)
+ajn::ProxyBusObject* SmartHomeService::FindProxyObject(const char* deviceId, const char* objectPath)
 {
-	return ThreadService::Instance().FindProxyObject(deviceID, objectPath);
+	return ThreadService::Instance().FindProxyObject(deviceId, objectPath);
 }
 
-const char* SmartHomeService::FindInterFaceName(const char* deviceID, const char* objectPath)
+const char* SmartHomeService::FindInterFaceName(const char* deviceId, const char* objectPath)
 {
-	return ThreadService::Instance().FindInterfaceName(deviceID, objectPath);
+	return ThreadService::Instance().FindInterfaceName(deviceId, objectPath);
 }
 
 void SmartHomeService::HeartBeatManager()
@@ -466,70 +521,86 @@ Task* SmartHomeService::ArgsParse(const ajn::MsgArg* args, size_t argsNum, TaskT
 		{
 		case TASK_TYPE_OF_REGISTER:
 			{
+				printf("Enter the ArgsParse!\n");
 				TaskRegister* taskRegister = static_cast<TaskRegister*>(task->task);
-				const ajn::MsgArg* methodArgs = NULL;
-				const char* wellKnownName = NULL;
-				const char* uniqueName = NULL;
-				const char* deviceID = NULL;
+				String Source(args[1].v_string.str);
+				String wellKnownName;
+				String uniqueName;
+				String deviceId ;
 				
-				args[0].Get("s", &wellKnownName);
-				args[1].Get("s", &uniqueName);
- 				args[2].Get("s", &deviceID);
-				args[3].Get("a(sov)", &taskRegister->methodArgsNum, &methodArgs);
+				ReturnNamesAndID(Source,wellKnownName,uniqueName,deviceId);
 
-				memcpy(taskRegister->wellKnownName, wellKnownName, strlen(wellKnownName));
-				memcpy(taskRegister->uniqueName, uniqueName, strlen(uniqueName));
-				memcpy(taskRegister->deviceID, deviceID, strlen(deviceID));	
+				const ajn::MsgArg* methodArgs = new ajn::MsgArg("s",Source.c_str());
 
+				memcpy(taskRegister->wellKnownName, wellKnownName.c_str(), strlen(wellKnownName.c_str()));
+				memcpy(taskRegister->uniqueName, uniqueName.c_str(), strlen(uniqueName.c_str()));
+				memcpy(taskRegister->deviceId, deviceId.c_str(), strlen(deviceId.c_str()));	
+
+				taskRegister->methodArgsNum = 1;
 				taskRegister->methodArgs = new ajn::MsgArg[taskRegister->methodArgsNum];
-				for (int i=0; i<taskRegister->methodArgsNum; ++i){
-					taskRegister->methodArgs[i] = methodArgs[i];
-				}
+				taskRegister->methodArgs[0] = *methodArgs;
 
 				break;
 			}
 		case TASK_TYPE_OF_UNREGISTER:
 			{
-				const char* deviceID = NULL;
+				const char* deviceId = NULL;
 
 				TaskUnRegister* taskUnRegister = static_cast<TaskUnRegister*>(task->task);
 				
-				args[0].Get("s", &deviceID);
-				memcpy(taskUnRegister->deviceID, deviceID, strlen(deviceID));
+				args[0].Get("s", &deviceId);
+				memcpy(taskUnRegister->deviceId, deviceId, strlen(deviceId));
 				
 				break;
 			}
 		case TASK_TYPE_OF_HEARTBEAT:
 			{
-				const char* deviceID = NULL;
+				const char* deviceId = NULL;
+				const char* randomString = NULL;
 
 				TaskHeartBeat* taskHeartBeat = static_cast<TaskHeartBeat*>(task->task);
 				
-				args[0].Get("s", &deviceID);
-				memcpy(taskHeartBeat->deviceID, deviceID, strlen(deviceID));
-				
+				args[0].Get("s", &deviceId);
+				args[1].Get("s", &randomString);
+				memcpy(taskHeartBeat->deviceId, deviceId, strlen(deviceId));
+				memcpy(taskHeartBeat->randomString, randomString, strlen(randomString));
 				break;
 			}
 		case TASK_TYPE_OF_EXECUTE:
 			{
 				TaskExecute* taskExecute = static_cast<TaskExecute*>(task->task);
-				char* deviceID = NULL;
+				char* deviceId = NULL;
 				char* objectPath = NULL;
 				char* methodName = NULL;
+				char* interfaceName = NULL;
 				ajn::MsgArg* medthodArgs = NULL;
 			
 				args[0].Get("b", &taskExecute->needReturn);
-				args[1].Get("s", &deviceID);
+				args[1].Get("s", &deviceId);
 				args[2].Get("o", &objectPath);
-				args[3].Get("s", &methodName);
-				args[4].Get("v", &medthodArgs);
+				args[3].Get("s", &interfaceName);
+				args[4].Get("s", &methodName);
+				args[5].Get("v", &medthodArgs);
 			
-				memcpy(taskExecute->deviceID, deviceID, strlen(deviceID));
+				memcpy(taskExecute->deviceId, deviceId, strlen(deviceId));
 				memcpy(taskExecute->objectPath, objectPath, strlen(objectPath));
 				memcpy(taskExecute->methodName, methodName, strlen(methodName));
+				memcpy(taskExecute->interfaceName, interfaceName, strlen(interfaceName));
+
 				
-				taskExecute->methodArgs[0] = args[4];
+				taskExecute->methodArgs[0] = args[5];
 			
+				break;
+			}
+		case TASK_TYPE_OF_VERIFICATION:
+			{
+				TaskVerification* taskVerification = static_cast<TaskVerification*>(task->task);
+				const char* deviceId = NULL;
+				
+ 				args[0].Get("s", &deviceId);
+
+				memcpy(taskVerification->deviceId, deviceId, strlen(deviceId));	
+
 				break;
 			}
 		default :
@@ -539,6 +610,29 @@ Task* SmartHomeService::ArgsParse(const ajn::MsgArg* args, size_t argsNum, TaskT
 	}
 
 	return task;
+}
+const char* SmartHomeService::GenerateRandomString(char *device_randomString)
+{
+	srand((unsigned)time(NULL));
+	for (int i = 0; i < 8; i++)
+	{
+		int x = rand() / (RAND_MAX / (sizeof(CCH) - 1));
+		device_randomString[i] = CCH[x];
+	}
+	return device_randomString;
+}
+QStatus SmartHomeService::Get(const char* ifcName, const char* propName, MsgArg& val) {
+    QCC_DbgTrace(("SmartHomeService::%s", __FUNCTION__));
+    QStatus status = ER_BUS_NO_SUCH_PROPERTY;
+	if (0 == strcmp(ifcName, INTERFACE_NAME)) {
+        if (0 == strcmp("Version", propName)) {
+			status = val.Set("u", VERSION);
+		}
+		if (0 == strcmp("ServiceInterfaceVersion", propName)) {
+			status = val.Set("q", SERVICEINTERFACEVERSION);
+        }
+    }
+    return status;
 }
 
 } // namespace

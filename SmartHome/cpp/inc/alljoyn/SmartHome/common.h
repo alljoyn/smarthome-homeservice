@@ -1,19 +1,3 @@
-/******************************************************************************
- *    Copyright (c) 2014, AllSeen Alliance. All rights reserved.
- *
- *    Permission to use, copy, modify, and/or distribute this software for any
- *    purpose with or without fee is hereby granted, provided that the above
- *    copyright notice and this permission notice appear in all copies.
- *
- *    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- *    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- *    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- *    ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- *    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- *    ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- *    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- ******************************************************************************/
-
 #ifndef _COMMON_H
 #define _COMMON_H
 
@@ -38,7 +22,8 @@ typedef enum _taskType{
 	TASK_TYPE_OF_REGISTER = 1,
 	TASK_TYPE_OF_UNREGISTER = 2,
 	TASK_TYPE_OF_HEARTBEAT = 3,
-	TASK_TYPE_OF_EXECUTE = 4
+	TASK_TYPE_OF_EXECUTE = 4,
+	TASK_TYPE_OF_VERIFICATION = 5
 }TaskType;
 
 /**
@@ -55,8 +40,7 @@ typedef struct _task {
 typedef struct _taskRegister{
 	char wellKnownName[MAX_ARRAY_LEN];
 	char uniqueName[MAX_ARRAY_LEN];
-	char deviceID[MAX_ARRAY_LEN];
-	char interfaceName[MAX_ARRAY_LEN];	
+	char deviceId[MAX_ARRAY_LEN];
 	size_t methodArgsNum;
 	ajn::MsgArg* methodArgs;
 
@@ -64,8 +48,7 @@ typedef struct _taskRegister{
 	{
 		memset(wellKnownName, '\0', sizeof(wellKnownName));
 		memset(uniqueName, '\0', sizeof(uniqueName));
-		memset(deviceID, '\0', sizeof(deviceID));
-		memset(interfaceName, '\0', sizeof(interfaceName));
+		memset(deviceId, '\0', sizeof(deviceId));
 		methodArgsNum = 0;
 		methodArgs = NULL;
 	}
@@ -83,10 +66,10 @@ typedef struct _taskRegister{
 * Container of a task of unregister.
 */
 typedef struct _taskUnRegister{
-   char deviceID[MAX_ARRAY_LEN];
+   char deviceId[MAX_ARRAY_LEN];
    _taskUnRegister()
 	{
-		memset(deviceID, '\0', sizeof(deviceID));	
+		memset(deviceId, '\0', sizeof(deviceId));	
 	}
 }TaskUnRegister;
 
@@ -94,10 +77,12 @@ typedef struct _taskUnRegister{
 * Container of a task of heart beat.
 */
 typedef struct _taskHeartBeat{
-   char deviceID[MAX_ARRAY_LEN] ;
+   char deviceId[MAX_ARRAY_LEN] ;
+   char randomString[MAX_ARRAY_LEN] ;
     _taskHeartBeat()
 	{
-		memset(deviceID, '\0', sizeof(deviceID));
+		memset(deviceId, '\0', sizeof(deviceId));
+		memset(randomString, '\0', sizeof(randomString));
 	}
 }TaskHeartBeat;
 
@@ -106,16 +91,18 @@ typedef struct _taskHeartBeat{
 */
 typedef struct _taskExecute {
 	int needReturn;	// we need to return a value if zero. 
-	char deviceID[MAX_ARRAY_LEN];
+	char deviceId[MAX_ARRAY_LEN];
 	char objectPath[MAX_ARRAY_LEN];
+	char interfaceName[MAX_ARRAY_LEN];
 	char methodName[MAX_ARRAY_LEN];
 	ajn::MsgArg* methodArgs; 
 	_taskExecute()
 	{
 		needReturn = 0;
-		memset(deviceID, '\0', sizeof(deviceID));
+		memset(deviceId, '\0', sizeof(deviceId));
 		memset(objectPath, '\0', sizeof(objectPath));
 		memset(methodName, '\0', sizeof(methodName));
+		memset(interfaceName, '\0', sizeof(interfaceName));
 		methodArgs = new ajn::MsgArg();
 	}
 
@@ -127,6 +114,23 @@ typedef struct _taskExecute {
 		}
 	}
 } TaskExecute;
+
+/**
+* Container of a task of verification.
+*/
+typedef struct _taskVerification {
+	
+	char deviceId[MAX_ARRAY_LEN];
+	
+	_taskVerification()
+	{
+		memset(deviceId, '\0', sizeof(deviceId));
+	}
+
+	~_taskVerification()
+	{
+	}
+} TaskVerification;
 
 /**
 * The list of TaskRegister.
@@ -169,17 +173,33 @@ typedef std::map<const char*, const char*, _keyPtrCmp> MapInerfaceName;
 typedef struct _device{
 	char wellKnownName[MAX_ARRAY_LEN];
 	char uniqueName[MAX_ARRAY_LEN];
-	char deviceID[MAX_ARRAY_LEN];
+	char deviceId[MAX_ARRAY_LEN];
+	char interfaceName[MAX_ARRAY_LEN];
+	char objectPath[MAX_ARRAY_LEN];
+	size_t methodArgsNum;
+	ajn::MsgArg* methodArgs;
 
 	int  heartCount;
+	int stringTime;
+	int deviceLock;
+	char randomString[8]; 
 	MapProxyObject  proxyObjectList;
 	MapInerfaceName interFaceNameList;
 	_device()
 	{
 		heartCount = 3;
+		stringTime = 60;
+		deviceLock = 0;
+		memset(randomString,'\0',sizeof(randomString));
 		memset(wellKnownName, '\0', sizeof(wellKnownName));
 		memset(uniqueName, '\0', sizeof(uniqueName));
-		memset(deviceID, '\0', sizeof(deviceID));
+		memset(deviceId, '\0', sizeof(deviceId));
+		memset(interfaceName, '\0', sizeof(interfaceName));
+		memset(objectPath, '\0', sizeof(objectPath));
+		methodArgs = new ajn::MsgArg();
+	
+		methodArgsNum = 0;
+		methodArgs = NULL;
 	}
 	~_device()
 	{
@@ -189,7 +209,7 @@ typedef struct _device{
 
 /**
 * The list of Device stored on smart home server.
-* <DeviceID, Device>
+* <deviceId, Device>
 */
 typedef std::map<const char*, Device*, _keyPtrCmp> MapDevice;
 

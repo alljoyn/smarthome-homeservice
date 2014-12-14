@@ -1,19 +1,3 @@
-/******************************************************************************
- *    Copyright (c) 2014, AllSeen Alliance. All rights reserved.
- *
- *    Permission to use, copy, modify, and/or distribute this software for any
- *    purpose with or without fee is hereby granted, provided that the above
- *    copyright notice and this permission notice appear in all copies.
- *
- *    THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
- *    WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
- *    MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
- *    ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
- *    WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
- *    ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
- *    OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
- ******************************************************************************/
-
 #include "ThreadService.h"
 
 #include "ThreadServiceImpl.h"
@@ -175,6 +159,12 @@ void ThreadService::RecycleTask(Task* task)
 			//TaskExecute* taskExecute = static_cast<TaskExecute*>(task->task);
 			break;
 		}
+
+	case TASK_TYPE_OF_VERIFICATION:
+		{
+			//TaskExecute* taskExecute = static_cast<TaskExecute*>(task->task);
+			break;
+		}
 	}
 
 	m_mutex.Lock();
@@ -182,10 +172,10 @@ void ThreadService::RecycleTask(Task* task)
 	m_mutex.Unlock();	
 }
 
-Device* ThreadService::PopDevice(const char* deviceID)
+Device* ThreadService::PopDevice(const char* deviceId)
 {
 	m_mutex.Lock();
-	Device* device = MemoryManager::Instance()->PopDevice(deviceID);
+	Device* device = MemoryManager::Instance()->PopDevice(deviceId);
 	m_mutex.Unlock();
 
 	return device;
@@ -207,28 +197,28 @@ QStatus ThreadService::PushDevice(Device* device)
 	return status;
 }
 
-Device* ThreadService::FindDevice(const char* deviceID)
+Device* ThreadService::FindDevice(const char* deviceId)
 {
 	m_mutex.Lock();
-	Device* device = MemoryManager::Instance()->FindDevice(deviceID);
+	Device* device = MemoryManager::Instance()->FindDevice(deviceId);
 	m_mutex.Unlock();
 
 	return device;
 }
 
-ajn::ProxyBusObject* ThreadService::FindProxyObject(const char* deviceID, const char* objectPath)
+ajn::ProxyBusObject* ThreadService::FindProxyObject(const char* deviceId, const char* objectPath)
 {
 	m_mutex.Lock();
-	ajn::ProxyBusObject* remoteObj = MemoryManager::Instance()->FindProxyObject(deviceID, objectPath);
+	ajn::ProxyBusObject* remoteObj = MemoryManager::Instance()->FindProxyObject(deviceId, objectPath);
 	m_mutex.Unlock();
 
 	return remoteObj;
 }
 
-const char* ThreadService::FindInterfaceName(const char* deviceID, const char* objectPath)
+const char* ThreadService::FindInterfaceName(const char* deviceId, const char* objectPath)
 {
 	m_mutex.Lock();
-	const char* ifaceName = MemoryManager::Instance()->FindInterfanceName(deviceID, objectPath);
+	const char* ifaceName = MemoryManager::Instance()->FindInterfanceName(deviceId, objectPath);
 	m_mutex.Unlock();
 
 	return ifaceName;
