@@ -15,7 +15,7 @@ Platform Support
 
 
 Features added in Version 14.06
--------------------------------
+---------------------------------
 
 Issues Addressed in Version 14.06
 ---------------------------------
